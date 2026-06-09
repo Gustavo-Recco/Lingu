@@ -4,7 +4,7 @@
 
 **Autor:** Gustavo Fernandes Recco  
 **Disciplina:** Sistemas Multimídia — CIT7596  
-**Instituição:** UFSC — TIC - Campus Araranguá — 2026  
+**Instituição:** UFSC — Campus Araranguá — 2026  
 
 ---
 
