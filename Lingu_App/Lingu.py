@@ -8,6 +8,7 @@ Bibliotecas: Matplotlib + NumPy + pyttsx3 + winsound
 """
 import matplotlib
 matplotlib.use("TkAgg")
+matplotlib.rcParams["toolbar"] = "None"
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.widgets import Button, TextBox
