@@ -17,7 +17,11 @@
 - scipy
 
 ### 1. Instalar dependências
-pip install matplotlib numpy pyttsx3
+pip install matplotlib numpy pyttsx3   
+
+ou
+
+pip install -r requirements.txt
 ```
 > `winsound` já vem com o Python no Windows, não precisa instalar.
 
