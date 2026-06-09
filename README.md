@@ -24,9 +24,9 @@ ou
 ```
 pip install -r requirements.txt
 ```
-```
+
 > `winsound` já vem com o Python no Windows, não precisa instalar.
-```
+
 ### 2. Executar
 
 ```bash
