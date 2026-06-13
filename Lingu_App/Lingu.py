@@ -59,12 +59,12 @@ IDIOMAS = {
     "en": {
         "nome": "Inglês", "bandeira": "[EN]", "lang_code": "en",
         "vocabulario": [
-            {"orig": "Multimedia", "pt": "Multimídia", "nivel": "Médio",   "frase": "Multimedia combines text, audio and images.",  "frase_pt": "Multimidia combina texto, audio e imagens."},
+            {"orig": "Multimedia", "pt": "Multimídia", "nivel": "Médio",   "frase": "Multimedia combines text, audio and images.",  "frase_pt": "Multimídia combina texto, áudio e imagens."},
             {"orig": "Compression","pt": "Compressão", "nivel": "Avançado","frase": "Video compression reduces file size.","frase_pt": "A compressao de video reduz o tamanho do arquivo."},
-            {"orig": "Resolution", "pt": "Resolução",  "nivel": "Médio",   "frase": "Higher resolution means better image quality.","frase_pt": "Maior resolucao significa melhor qualidade de imagem."},
+            {"orig": "Resolution", "pt": "Resolução",  "nivel": "Médio",   "frase": "Higher resolution means better image quality.","frase_pt": "Maior resolução significa melhor qualidade de imagem."},
         ],
         "frases": [
-            {"frase": "The ___ encodes video into a smaller format.",  "resposta": "codec",      "opcoes": ["codec","player","screen","buffer"]},
+            {"frase": "The ___ encodes video into a smaller format.",  "resposta": "codec",      "opçoes": ["codec","player","screen","buffer"]},
             {"frase": "A higher ___ produces sharper images.",         "resposta": "resolution", "opcoes": ["resolution","volume","codec","frame"]},
             {"frase": "Audio and video must be ___ in a stream.",      "resposta": "synced",     "opcoes": ["synced","deleted","paused","encoded"]},
             {"frase": "JPEG is a ___ format for images.",              "resposta": "compressed", "opcoes": ["compressed","raw","animated","streamed"]},
@@ -75,9 +75,9 @@ IDIOMAS = {
     "es": {
         "nome": "Espanhol", "bandeira": "[ES]", "lang_code": "es",
         "vocabulario": [
-            {"orig": "Multimedia", "pt": "MultimÍdia", "nivel": "Médio",   "frase": "La multimedia combina texto, audio e imagenes.", "frase_pt": "A multimidia combina texto, audio e imagens."},
-            {"orig": "Compresion", "pt": "Compressão", "nivel": "Avançado","frase": "La compresion de video reduce el tamano del archivo.", "frase_pt": "A compressao de video reduz o tamanho do arquivo."},
-            {"orig": "Resolucion", "pt": "Resolução",  "nivel": "Médio",   "frase": "Mayor resolucion significa mejor calidad de imagen.", "frase_pt": "Maior resolucao significa melhor qualidade de imagem."},
+            {"orig": "Multimedia", "pt": "MultimÍdia", "nivel": "Médio",   "frase": "La multimedia combina texto, audio e imagenes.", "frase_pt": "A multimídia combina texto, áudio e imagens."},
+            {"orig": "Compresion", "pt": "Compressão", "nivel": "Avançado","frase": "La compresion de video reduce el tamano del archivo.", "frase_pt": "A compressão de video reduz o tamanho do arquivo."},
+            {"orig": "Resolucion", "pt": "Resolução",  "nivel": "Médio",   "frase": "Mayor resolucion significa mejor calidad de imagen.", "frase_pt": "Maior resolução significa melhor qualidade de imagem."},
         ],
         "frases": [
             {"frase": "El ___ convierte el video a un formato menor.",  "resposta": "codec",       "opcoes": ["codec","buffer","canal","pixel"]},
