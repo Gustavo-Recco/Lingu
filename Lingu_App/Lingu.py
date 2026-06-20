@@ -20,7 +20,6 @@ _UI_QUEUE: queue.Queue = queue.Queue()
 
 import urllib.request, urllib.parse
 
-
 # Traduz via Google Translate grátis. Retorna string ou None.
 
 def _gt_translate(text, src, tgt):
