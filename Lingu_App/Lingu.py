@@ -20,8 +20,11 @@ _UI_QUEUE: queue.Queue = queue.Queue()
 
 import urllib.request, urllib.parse
 
+
+# Traduz via Google Translate grátis. Retorna string ou None.
+
 def _gt_translate(text, src, tgt):
-    """Traduz via Google Translate grátis. Retorna string ou None."""
+
     try:
         q   = urllib.parse.quote(text)
         url = (f"https://translate.googleapis.com/translate_a/single"
@@ -34,12 +37,11 @@ def _gt_translate(text, src, tgt):
         return None
 
 def _gt_exemplo(word, src):
-    """
-    Busca frase de exemplo via Google Translate (dt=ex).
-    Tenta dois endpoints diferentes; remove tags HTML do resultado.
-    """
+    
+# Busca frase de exemplo via Google Translate (dt=ex).
+    
     import re
-    # Endpoint 1: dt=ex (exemplos de uso)
+
     for dt in ("ex", "e"):
         try:
             q   = urllib.parse.quote(word)
@@ -48,10 +50,10 @@ def _gt_exemplo(word, src):
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             raw = urllib.request.urlopen(req, timeout=6).read().decode("utf-8")
             data = json.loads(raw)
-            # Exemplos ficam em data[3][0][...][0] quando presentes
+            
             if len(data) > 3 and data[3]:
                 bloco = data[3]
-                # pode ser lista de listas
+                
                 for item in bloco:
                     if isinstance(item, list):
                         for sub in item:
@@ -77,14 +79,14 @@ except:
     WINSOUND_OK = False
 
 _tts_lock  = threading.Lock()
-_tts_stop  = threading.Event()   # sinaliza para a thread atual parar
+_tts_stop  = threading.Event()   # Vaai sinalizar para a thread atual parar
 
 def falar(texto, lang="en"):
     if not TTS_OK: return
-    # Cancela qualquer fala em andamento
+# Cancela qualquer fala em andamento
     _tts_stop.set()
     def _run():
-        # Aguarda a thread anterior perceber o stop (max 300ms)
+
         acquired = _tts_lock.acquire(timeout=0.4)
         _tts_stop.clear()
         if not acquired:
@@ -105,7 +107,6 @@ def falar(texto, lang="en"):
         finally:
             _tts_lock.release()
     threading.Thread(target=_run, daemon=True).start()
-
 
 def som_acerto():
     if WINSOUND_OK: threading.Thread(target=lambda:[winsound.Beep(880,120),winsound.Beep(1100,150)],daemon=True).start()
@@ -216,7 +217,7 @@ class LinguApp:
                 fn()
         except queue.Empty:
             pass
-        # reagenda via Tk after — 100 ms, thread-safe
+        
         self.fig.canvas.get_tk_widget().after(100, self._poll_ui)
 
     def status(self, msg):
@@ -226,7 +227,7 @@ class LinguApp:
 
     def limpar(self):
         self.ax.cla(); self.ax.set_facecolor(BG); self.ax.axis("off")
-        # Remove fig.text dos labels da tela_add se existirem
+        
         for txt in getattr(self, "_add_labels", []):
             try: txt.remove()
             except: pass
@@ -345,7 +346,7 @@ class LinguApp:
         self.btn("Menu",       [0.77, 0.15, 0.16, 0.09], self.tela_menu, cor=BT)
         self.status(f"🃏 Flashcard")
         self.fig.canvas.draw_idle()
-        falar(card["orig"], lang())  # fala após o draw
+        falar(card["orig"], lang())  
 
     def _fc_prox(self, _=None): S["card_i"] += 1; self.tela_flashcard()
     def _fc_ant(self,  _=None): S["card_i"] = max(0, S["card_i"]-1); self.tela_flashcard()
@@ -359,7 +360,7 @@ class LinguApp:
         S.update({"quiz_palavra": p, "quiz_opcoes": opcoes, "quiz_resp": p["pt"], "quiz_sel": None})
         S["vistas"].add(p["orig"])
         self._draw_quiz()
-        falar(p["orig"], lang())  # fala após o draw
+        falar(p["orig"], lang())  
 
     def _draw_quiz(self, res=None):
         self.limpar()
@@ -407,7 +408,7 @@ class LinguApp:
         S["frase_i"] = random.randint(0, len(frases())-1)
         S["frase_sel"] = None
         self._draw_frase()
-        # Fala depois do draw para não bloquear a UI
+       
         ex = frases()[S["frase_i"]]
         falar(ex["frase"].replace("___", "blank"), lang())
 
@@ -509,19 +510,18 @@ class LinguApp:
         self.status("Progresso")
         self.fig.canvas.draw_idle()
 
-    # ══════════════════════════════════════════════════════════════════
-    #  Adicionar palavra  (PT → idioma alvo via Google Translate)
-    # ══════════════════════════════════════════════════════════════════
+#  Adicionar palavra  (PT → idioma alvo via Google Translate)
+  
     def tela_add(self, _=None, msg="", _prefill=None):
         self.limpar()
         self.ax.set_xlim(0,1); self.ax.set_ylim(0,1)
         d = IDIOMAS[S["idioma"]]
         src = lang()  # "en" ou "es"
 
-        # Título
+      
         self.txt(0.5, 0.96, f"Adicionar Palavra — {d['nome']}", cor=cor_id(), fs=16, bold=True)
 
-        # Limpa labels de fig anteriores
+       
         for txt in getattr(self, "_add_labels", []):
             try: txt.remove()
             except: pass
@@ -532,17 +532,17 @@ class LinguApp:
                               fontweight="bold", va="bottom")
             self._add_labels.append(t)
 
-        # ── Linha 1: Palavra em PT + botão → traduz para idioma ──────
+        # Palavra em PT e botão para traduzir o idioma 
         figlabel(0.13, 0.895, "Palavra em Português:")
         figlabel(0.73, 0.895, f"→  {d['nome']}:", cor=cor_id())
-        ax_pt  = self.fig.add_axes([0.13, 0.830, 0.38, 0.052])   # campo PT
-        ax_orig = self.fig.add_axes([0.57, 0.830, 0.30, 0.052])  # campo idioma (preenchido auto)
+        ax_pt  = self.fig.add_axes([0.13, 0.830, 0.38, 0.052])   
+        ax_orig = self.fig.add_axes([0.57, 0.830, 0.30, 0.052])  
 
-        # ── Linha 2: Frase em PT + botão → traduz frase ──────────────
+        # Frase em PT e botão para traduzir a frase 
         figlabel(0.13, 0.700, "Frase em Português:")
         figlabel(0.73, 0.700, f"→  Frase em {d['nome']}:", cor=cor_id())
-        ax_fpt = self.fig.add_axes([0.13, 0.635, 0.38, 0.052])   # frase PT
-        ax_f   = self.fig.add_axes([0.57, 0.635, 0.30, 0.052])   # frase idioma
+        ax_fpt = self.fig.add_axes([0.13, 0.635, 0.38, 0.052])   
+        ax_f   = self.fig.add_axes([0.57, 0.635, 0.30, 0.052])   
 
         tb_pt   = TextBox(ax_pt,   "", color=CARD, hovercolor="#1e3a5f")
         tb_orig = TextBox(ax_orig, "", color="#0d2035", hovercolor="#1e3a5f")
@@ -552,11 +552,11 @@ class LinguApp:
         for tb in [tb_pt, tb_orig, tb_fpt, tb_f]:
             tb.text_disp.set_color(TEXT); tb.text_disp.set_fontsize(10)
 
-        # Campos de idioma levemente diferentes visualmente (são preenchidos auto)
+        
         tb_orig.text_disp.set_color(cor_id())
         tb_f.text_disp.set_color(cor_id())
 
-        # Preenche se vier de tradução anterior
+        
         if _prefill:
             tb_pt.set_val(  _prefill.get("pt",       ""))
             tb_orig.set_val(_prefill.get("orig",      ""))
@@ -661,19 +661,19 @@ class LinguApp:
 
 
     def _fechar_add(self):
-        # Remove eixos dos TextBoxes e botões Traduzir registrados com chaves fixas
+        
         for k in ["_ao","_ap","_af","_ag","_atrp","_atrf"]:
             if k in self.btns:
                 try: self.btns.pop(k).remove()
                 except: pass
         for k in ["_to","_tp","_tf","_tg","_bt_trp","_bt_trf"]:
             self.btns.pop(k, None)
-        # Remove todos os _btn_* (botões de nível, Salvar, Cancelar) que sobrarem
+        # Vai remover todos os botões de nível, Salvar, Cancelar que sobrarem
         for k in list(self.btns.keys()):
             if k.startswith("_btn_"):
                 try: self.btns.pop(k).ax.remove()
                 except: pass
-        # Remove fig.text dos labels
+        
         for txt in getattr(self, "_add_labels", []):
             try: txt.remove()
             except: pass
