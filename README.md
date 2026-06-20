@@ -14,7 +14,7 @@
 - Python 3.10+
 - matplotlib
 - numpy
-- scipy
+- pyttsx3
 
 ### 1. Instalar dependências
 ```
@@ -26,6 +26,7 @@ pip install -r requirements.txt
 ```
 
 > `winsound` já vem com o Python no Windows, não precisa instalar.
+> `urllib` e `queue` também já fazem parte da biblioteca padrão do Python.
 
 ### 2. Executar
 
@@ -56,7 +57,7 @@ py Lingu.py
 | Quiz | Múltipla escolha — traduz a palavra corretamente |
 | Complete a Frase | Preenche a lacuna com a palavra gramatical correta |
 | Progresso | Gráficos de acertos, erros e palavras estudadas por nível |
-| Add Palavra | Cadastra novas palavras que ficam salvas entre sessões |
+| Add Palavra | Cadastra novas palavras com auto-tradução via Google Translate (PT → idioma alvo), salvas entre sessões |
 
 ---
 
@@ -83,6 +84,8 @@ Palavras extras são adicionadas pelo usuário no app e salvas em `vocab_extra.j
 | `pyttsx3` | Síntese de voz (TTS) em inglês e espanhol |
 | `winsound` | Sons de acerto e erro (Windows) |
 | `threading` | Áudio em paralelo sem travar a interface |
+| `urllib` | Requisições ao Google Translate (sem API key) |
+| `queue` | Comunicação thread-safe entre tradução e UI |
 | `json` / `os` | Persistência das palavras do usuário |
 
 ---
@@ -90,5 +93,6 @@ Palavras extras são adicionadas pelo usuário no app e salvas em `vocab_extra.j
 ## Observações
 
 - O arquivo `vocab_extra.json` é criado automaticamente ao adicionar a primeira palavra.
+- A auto-tradução usa o endpoint gratuito do Google Translate — requer conexão com internet.
 - A voz em espanhol depende de uma voz instalada no sistema — se não encontrar, usa a voz padrão.
 - Testado no Windows com Python 3.14.
