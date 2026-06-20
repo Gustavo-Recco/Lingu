@@ -209,7 +209,7 @@ class LinguApp:
         self.tela_idioma()
 
     def _poll_ui(self):
-        """Verifica a fila a cada 100 ms e executa callbacks na thread principal (Tk)."""
+        #Verifica a fila a cada 100 ms e executa callbacks na thread principal (Tk).
         try:
             while True:
                 fn = _UI_QUEUE.get_nowait()
