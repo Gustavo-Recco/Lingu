@@ -13,7 +13,55 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.widgets import Button, TextBox
 import numpy as np
-import random, threading, json, os
+import random, threading, json, os, queue
+
+# Fila para comunicação thread → UI principal
+_UI_QUEUE: queue.Queue = queue.Queue()
+
+import urllib.request, urllib.parse
+
+def _gt_translate(text, src, tgt):
+    """Traduz via Google Translate grátis. Retorna string ou None."""
+    try:
+        q   = urllib.parse.quote(text)
+        url = (f"https://translate.googleapis.com/translate_a/single"
+               f"?client=gtx&sl={src}&tl={tgt}&dt=t&q={q}")
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        raw = urllib.request.urlopen(req, timeout=6).read().decode("utf-8")
+        data = json.loads(raw)
+        return "".join(part[0] for part in data[0] if part[0])
+    except Exception:
+        return None
+
+def _gt_exemplo(word, src):
+    """
+    Busca frase de exemplo via Google Translate (dt=ex).
+    Tenta dois endpoints diferentes; remove tags HTML do resultado.
+    """
+    import re
+    # Endpoint 1: dt=ex (exemplos de uso)
+    for dt in ("ex", "e"):
+        try:
+            q   = urllib.parse.quote(word)
+            url = (f"https://translate.googleapis.com/translate_a/single"
+                   f"?client=gtx&sl={src}&tl=pt&dt=t&dt={dt}&q={q}")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            raw = urllib.request.urlopen(req, timeout=6).read().decode("utf-8")
+            data = json.loads(raw)
+            # Exemplos ficam em data[3][0][...][0] quando presentes
+            if len(data) > 3 and data[3]:
+                bloco = data[3]
+                # pode ser lista de listas
+                for item in bloco:
+                    if isinstance(item, list):
+                        for sub in item:
+                            if isinstance(sub, list) and sub and isinstance(sub[0], str):
+                                frase = re.sub(r"<[^>]+>", "", sub[0]).strip()
+                                if len(frase) > 5:
+                                    return frase
+        except Exception:
+            pass
+    return None
 
 # Audio ══════════════════════════════════════════════
 try:
@@ -28,22 +76,36 @@ try:
 except:
     WINSOUND_OK = False
 
-_tts_lock = threading.Lock()
+_tts_lock  = threading.Lock()
+_tts_stop  = threading.Event()   # sinaliza para a thread atual parar
 
 def falar(texto, lang="en"):
     if not TTS_OK: return
+    # Cancela qualquer fala em andamento
+    _tts_stop.set()
     def _run():
-        with _tts_lock:
-            try:
-                e = pyttsx3.init()
-                e.setProperty("rate", 145)
-                for v in e.getProperty("voices"):
-                    vid = (v.id + v.name).lower()
-                    if lang == "es" and ("spanish" in vid or "es_" in vid): e.setProperty("voice", v.id); break
-                    elif lang == "en" and ("english" in vid or "en_" in vid): e.setProperty("voice", v.id); break
-                e.say(texto); e.runAndWait()
-            except: pass
+        # Aguarda a thread anterior perceber o stop (max 300ms)
+        acquired = _tts_lock.acquire(timeout=0.4)
+        _tts_stop.clear()
+        if not acquired:
+            return
+        try:
+            e = pyttsx3.init()
+            e.setProperty("rate", 145)
+            for v in e.getProperty("voices"):
+                vid = (v.id + v.name).lower()
+                if lang == "es" and ("spanish" in vid or "es_" in vid):
+                    e.setProperty("voice", v.id); break
+                elif lang == "en" and ("english" in vid or "en_" in vid):
+                    e.setProperty("voice", v.id); break
+            if not _tts_stop.is_set():
+                e.say(texto)
+                e.runAndWait()
+        except: pass
+        finally:
+            _tts_lock.release()
     threading.Thread(target=_run, daemon=True).start()
+
 
 def som_acerto():
     if WINSOUND_OK: threading.Thread(target=lambda:[winsound.Beep(880,120),winsound.Beep(1100,150)],daemon=True).start()
@@ -64,7 +126,7 @@ IDIOMAS = {
             {"orig": "Resolution", "pt": "Resolução",  "nivel": "Médio",   "frase": "Higher resolution means better image quality.","frase_pt": "Maior resolução significa melhor qualidade de imagem."},
         ],
         "frases": [
-            {"frase": "The ___ encodes video into a smaller format.",  "resposta": "codec",      "opçoes": ["codec","player","screen","buffer"]},
+            {"frase": "The ___ encodes video into a smaller format.",  "resposta": "codec",      "opcoes": ["codec","player","screen","buffer"]},
             {"frase": "A higher ___ produces sharper images.",         "resposta": "resolution", "opcoes": ["resolution","volume","codec","frame"]},
             {"frase": "Audio and video must be ___ in a stream.",      "resposta": "synced",     "opcoes": ["synced","deleted","paused","encoded"]},
             {"frase": "JPEG is a ___ format for images.",              "resposta": "compressed", "opcoes": ["compressed","raw","animated","streamed"]},
@@ -143,19 +205,38 @@ class LinguApp:
             transform=self.axst.transAxes, ha="center", va="center",
             fontsize=11, color=DEST, fontweight="bold")
         carregar_extras()
+        self._poll_ui()          # inicia polling da fila de callbacks
         self.tela_idioma()
+
+    def _poll_ui(self):
+        """Verifica a fila a cada 100 ms e executa callbacks na thread principal (Tk)."""
+        try:
+            while True:
+                fn = _UI_QUEUE.get_nowait()
+                fn()
+        except queue.Empty:
+            pass
+        # reagenda via Tk after — 100 ms, thread-safe
+        self.fig.canvas.get_tk_widget().after(100, self._poll_ui)
 
     def status(self, msg):
         pre = f"[{IDIOMAS[S['idioma']]['nome']}] | " if S["idioma"] else ""
         self._st.set_text(f"✦ Lingu | {pre}{msg} | ✔ Acertos: {S['acertos']}  ✘ Erros: {S['erros']}  Palavras: {len(S['vistas'])}")
-        
         self.fig.canvas.draw_idle()
 
     def limpar(self):
         self.ax.cla(); self.ax.set_facecolor(BG); self.ax.axis("off")
-        for b in list(self.btns.values()):
-            try: b.ax.remove()
+        # Remove fig.text dos labels da tela_add se existirem
+        for txt in getattr(self, "_add_labels", []):
+            try: txt.remove()
             except: pass
+        self._add_labels = []
+        # Remove todos os eixos/botões registrados
+        for b in list(self.btns.values()):
+            try: b.ax.remove()   # Button
+            except:
+                try: b.remove()  # Axes direto
+                except: pass
         self.btns.clear()
 
     def btn(self, label, rect, cb, cor=None, fs=10):
@@ -164,7 +245,9 @@ class LinguApp:
         b  = Button(ab, label, color=cor, hovercolor=DEST)
         b.label.set_color("white"); b.label.set_fontsize(fs); b.label.set_fontweight("bold")
         b.on_clicked(cb)
-        self.btns[label] = b
+        # Chave única por eixo para evitar colisão de labels repetidos entre telas
+        key = f"_btn_{id(ab)}"
+        self.btns[key] = b
 
     def card_bg(self, x, y, w, h, cor):
         self.ax.add_patch(mpatches.FancyBboxPatch((x,y), w, h,
@@ -234,7 +317,7 @@ class LinguApp:
         idx  = S["card_i"] % len(vocab())
         card = vocab()[idx]
         S["vistas"].add(card["orig"])
-        falar(card["orig"], lang()); som_nav()
+        som_nav()
         self.limpar()
         self.ax.set_xlim(0,1); self.ax.set_ylim(0,1)
 
@@ -243,10 +326,8 @@ class LinguApp:
         self.txt(0.5, 0.80, card["orig"].upper(), cor=cor_id(), fs=30, bold=True)
         self.txt(0.5, 0.70, card["pt"], cor=TEXT, fs=22)
 
-        # Frase no idioma estrangeiro
         self.txt(0.5, 0.58, f'"{card["frase"]}"', cor=CINZ, fs=11, italic=True)
 
-        # Traducao da frase em portugues
         frase_pt = card.get("frase_pt", "")
         if frase_pt:
             self.txt(0.5, 0.48, f'({frase_pt})', cor=AMAR, fs=10, italic=True)
@@ -257,7 +338,6 @@ class LinguApp:
             transform=self.ax.transAxes))
         self.txt(0.5, 0.36, f"Nivel: {card['nivel']}", cor=ncor, fs=12, bold=True)
 
-        # Botoes todos na mesma linha, lado a lado 
         self.btn("◀  Anterior",   [0.05, 0.15, 0.16, 0.09], self._fc_ant)
         self.btn("▶  Proximo",    [0.23, 0.15, 0.16, 0.09], self._fc_prox)
         self.btn("♫  Ouvir",      [0.41, 0.15, 0.16, 0.09], lambda e: falar(card["orig"], lang()), cor=BT)
@@ -265,6 +345,7 @@ class LinguApp:
         self.btn("Menu",       [0.77, 0.15, 0.16, 0.09], self.tela_menu, cor=BT)
         self.status(f"🃏 Flashcard")
         self.fig.canvas.draw_idle()
+        falar(card["orig"], lang())  # fala após o draw
 
     def _fc_prox(self, _=None): S["card_i"] += 1; self.tela_flashcard()
     def _fc_ant(self,  _=None): S["card_i"] = max(0, S["card_i"]-1); self.tela_flashcard()
@@ -277,8 +358,8 @@ class LinguApp:
         random.shuffle(opcoes)
         S.update({"quiz_palavra": p, "quiz_opcoes": opcoes, "quiz_resp": p["pt"], "quiz_sel": None})
         S["vistas"].add(p["orig"])
-        falar(p["orig"], lang())
         self._draw_quiz()
+        falar(p["orig"], lang())  # fala após o draw
 
     def _draw_quiz(self, res=None):
         self.limpar()
@@ -289,9 +370,8 @@ class LinguApp:
         self.card_bg(0.08, 0.64, 0.76, 0.13, cor_id())
         self.txt(0.50, 0.71, p["orig"].upper(), cor=TEXT, fs=26, bold=True)
 
-        # Botao Ouvir ao lado da palavra
         self.btn("♫ Ouvir", [0.88, 0.68, 0.09, 0.09], lambda e: falar(p["orig"], lang()), cor=BT)
-            
+
         pos = [(0.08,0.50),(0.53,0.50),(0.08,0.35),(0.53,0.35)]
         for opt, (ox,oy) in zip(S["quiz_opcoes"], pos):
             if res is not None and S["quiz_sel"] == opt:
@@ -326,9 +406,10 @@ class LinguApp:
     def tela_frase(self, _=None):
         S["frase_i"] = random.randint(0, len(frases())-1)
         S["frase_sel"] = None
-        ex = frases()[S["frase_i"]]
-        falar(ex["frase"].replace("___","blank"), lang())
         self._draw_frase()
+        # Fala depois do draw para não bloquear a UI
+        ex = frases()[S["frase_i"]]
+        falar(ex["frase"].replace("___", "blank"), lang())
 
     def _draw_frase(self, res=None):
         self.limpar()
@@ -339,12 +420,12 @@ class LinguApp:
         self.card_bg(0.10, 0.64, 0.76, 0.13, AMAR)
         self.txt(0.50, 0.70, ex["frase"], cor=TEXT, fs=15, bold=True)
 
-        # Botao Ouvir ao lado da frase
         self.btn("♫ Ouvir", [0.88, 0.68, 0.09, 0.09],
             lambda e: falar(ex["frase"].replace("___","blank"), lang()), cor="#2c3e50")
 
         pos = [(0.08,0.50),(0.53,0.50),(0.08,0.35),(0.53,0.35)]
-        for opt, (ox,oy) in zip(ex["opcoes"], pos):
+        opcoes = ex.get("opcoes") or ex.get("opçoes") or []
+        for opt, (ox,oy) in zip(opcoes, pos):
             if res is not None and S["frase_sel"] == opt:
                 cor = VERD if opt == ex["resposta"] else VERM
             elif res is not None and opt == ex["resposta"]:
@@ -361,7 +442,6 @@ class LinguApp:
         elif res == "err":
             self.txt(0.5, 0.17, f'✘ Errado!"', cor=VERM, fs=13, bold=True)
             self.txt(0.5, 0.13, f'Resposta: "{ex["resposta"]}"', cor=VERM, fs=13, bold=True)
-
             self.btn("Proxima", [0.25, 0.12, 0.24, 0.09], self.tela_frase)
             self.btn("Menu",    [0.52, 0.12, 0.24, 0.09], self.tela_menu, cor=BT)
         self.status("Complete a Frase")
@@ -381,7 +461,6 @@ class LinguApp:
             self._draw_frase("err")
 
     # Progresso ══════════════════════════════════════════════
-
     def tela_progresso(self, _=None):
         self.limpar()
         self.ax.set_facecolor(BG); self.ax.axis("off")
@@ -430,57 +509,175 @@ class LinguApp:
         self.status("Progresso")
         self.fig.canvas.draw_idle()
 
-    # Adicionar palavra ══════════════════════════════════════════════
-    def tela_add(self, _=None, msg=""):
+    # ══════════════════════════════════════════════════════════════════
+    #  Adicionar palavra  (PT → idioma alvo via Google Translate)
+    # ══════════════════════════════════════════════════════════════════
+    def tela_add(self, _=None, msg="", _prefill=None):
         self.limpar()
         self.ax.set_xlim(0,1); self.ax.set_ylim(0,1)
         d = IDIOMAS[S["idioma"]]
-        self.txt(0.5, 0.93, f"Adicionar Palavra — {d['nome']}", cor=cor_id(), fs=18, bold=True)
-        for y, lbl in [(0.82, f"Palavra em {d['nome']}:"), (0.70, "Traducao (pt):"), (0.58, "Frase de exemplo:"), (0.46, "Trad. da frase (pt):")]:
-            self.ax.text(0.13, y, lbl, ha="left", va="center", fontsize=11, color=TEXT, fontweight="bold", transform=self.ax.transAxes)
-        ax_o = self.fig.add_axes([0.13, 0.75, 0.74, 0.055])
-        ax_p = self.fig.add_axes([0.13, 0.65, 0.74, 0.055])
-        ax_f = self.fig.add_axes([0.13, 0.55, 0.74, 0.055])
-        ax_g = self.fig.add_axes([0.13, 0.45, 0.74, 0.055])
-        tb_o = TextBox(ax_o, "", color=CARD, hovercolor="#1e3a5f")
-        tb_p = TextBox(ax_p, "", color=CARD, hovercolor="#1e3a5f")
-        tb_f = TextBox(ax_f, "", color=CARD, hovercolor="#1e3a5f")
-        tb_g = TextBox(ax_g, "", color=CARD, hovercolor="#1e3a5f")
-        tb_g.text_disp.set_color(TEXT); tb_g.text_disp.set_fontsize(12)
-        for tb in [tb_o, tb_p, tb_f]:
-            tb.text_disp.set_color(TEXT); tb.text_disp.set_fontsize(12)
-        for k, v in [("_ao",ax_o),("_ap",ax_p),("_af",ax_f),("_ag",ax_g),("_to",tb_o),("_tp",tb_p),("_tf",tb_f),("_tg",tb_g)]:
+        src = lang()  # "en" ou "es"
+
+        # Título
+        self.txt(0.5, 0.96, f"Adicionar Palavra — {d['nome']}", cor=cor_id(), fs=16, bold=True)
+
+        # Limpa labels de fig anteriores
+        for txt in getattr(self, "_add_labels", []):
+            try: txt.remove()
+            except: pass
+        self._add_labels = []
+
+        def figlabel(fx, fy, s, cor=TEXT):
+            t = self.fig.text(fx, fy, s, fontsize=10, color=cor,
+                              fontweight="bold", va="bottom")
+            self._add_labels.append(t)
+
+        # ── Linha 1: Palavra em PT + botão → traduz para idioma ──────
+        figlabel(0.13, 0.895, "Palavra em Português:")
+        figlabel(0.73, 0.895, f"→  {d['nome']}:", cor=cor_id())
+        ax_pt  = self.fig.add_axes([0.13, 0.830, 0.38, 0.052])   # campo PT
+        ax_orig = self.fig.add_axes([0.57, 0.830, 0.30, 0.052])  # campo idioma (preenchido auto)
+
+        # ── Linha 2: Frase em PT + botão → traduz frase ──────────────
+        figlabel(0.13, 0.700, "Frase em Português:")
+        figlabel(0.73, 0.700, f"→  Frase em {d['nome']}:", cor=cor_id())
+        ax_fpt = self.fig.add_axes([0.13, 0.635, 0.38, 0.052])   # frase PT
+        ax_f   = self.fig.add_axes([0.57, 0.635, 0.30, 0.052])   # frase idioma
+
+        tb_pt   = TextBox(ax_pt,   "", color=CARD, hovercolor="#1e3a5f")
+        tb_orig = TextBox(ax_orig, "", color="#0d2035", hovercolor="#1e3a5f")
+        tb_fpt  = TextBox(ax_fpt,  "", color=CARD, hovercolor="#1e3a5f")
+        tb_f    = TextBox(ax_f,    "", color="#0d2035", hovercolor="#1e3a5f")
+
+        for tb in [tb_pt, tb_orig, tb_fpt, tb_f]:
+            tb.text_disp.set_color(TEXT); tb.text_disp.set_fontsize(10)
+
+        # Campos de idioma levemente diferentes visualmente (são preenchidos auto)
+        tb_orig.text_disp.set_color(cor_id())
+        tb_f.text_disp.set_color(cor_id())
+
+        # Preenche se vier de tradução anterior
+        if _prefill:
+            tb_pt.set_val(  _prefill.get("pt",       ""))
+            tb_orig.set_val(_prefill.get("orig",      ""))
+            tb_fpt.set_val( _prefill.get("frase_pt",  ""))
+            tb_f.set_val(   _prefill.get("frase",     ""))
+
+        for k, v in [("_ao",ax_orig),("_ap",ax_pt),("_af",ax_f),("_ag",ax_fpt),
+                     ("_to",tb_orig),("_tp",tb_pt),("_tf",tb_f),("_tg",tb_fpt)]:
             self.btns[k] = v
 
-            self._nivel = "Básico"
-            self.ax.text(0.20, 0.17, "Nivel:", ha="left", va="center",
-            fontsize=11, color=TEXT, fontweight="bold", transform=self.ax.transAxes)
-        for nivel, cor, xb in [("Básico",VERD,0.28),("Médio",AMAR,0.44),("Avançado",VERM,0.60)]:
-            self.btn(nivel, [xb, 0.26, 0.12, 0.07], lambda e,n=nivel: setattr(self,"_nivel",n), cor=cor)
-        if msg:
-            self.txt(0.5, 0.25, msg, cor=VERD if "OK" in msg else VERM, fs=12, bold=True)
+        # ── Botão Traduzir Palavra ─────────────────────────────────────
+        def _traduzir_palavra(e):
+            palavra_pt = self.btns["_tp"].text.strip()
+            if not palavra_pt:
+                self._fechar_add(); self.tela_add(msg="Digite a palavra em português!")
+                return
+            self._st.set_text("✦ Lingu | Traduzindo palavra... aguarde")
+            self.fig.canvas.draw_idle()
+            frase_pt_salva = self.btns["_tg"].text.strip()
+            frase_id_salva = self.btns["_tf"].text.strip()
 
+            def _buscar():
+                orig = _gt_translate(palavra_pt, "pt", src) or ""
+                prefill = {"pt": palavra_pt, "orig": orig,
+                           "frase_pt": frase_pt_salva, "frase": frase_id_salva}
+                def _cb():
+                    self._fechar_add()
+                    m = f'"{palavra_pt}" → "{orig}"' if orig else "Sem conexão."
+                    self.tela_add(msg=m, _prefill=prefill)
+                _UI_QUEUE.put(_cb)
+            threading.Thread(target=_buscar, daemon=True).start()
+
+        ax_trp = self.fig.add_axes([0.52, 0.830, 0.04, 0.052])
+        b_trp  = Button(ax_trp, "▶", color="#16a085", hovercolor=DEST)
+        b_trp.label.set_color("white"); b_trp.label.set_fontsize(13); b_trp.label.set_fontweight("bold")
+        b_trp.on_clicked(_traduzir_palavra)
+        self.btns["_atrp"] = ax_trp
+        self.btns["_bt_trp"] = b_trp
+
+        # ── Botão Traduzir Frase ───────────────────────────────────────
+        def _traduzir_frase(e):
+            frase_pt = self.btns["_tg"].text.strip()
+            if not frase_pt:
+                self._fechar_add()
+                self.tela_add(msg="Digite a frase em português!",
+                              _prefill={"pt": self.btns["_tp"].text.strip(),
+                                        "orig": self.btns["_to"].text.strip(),
+                                        "frase": self.btns["_tf"].text.strip(),
+                                        "frase_pt": ""})
+                return
+            self._st.set_text("✦ Lingu | Traduzindo frase... aguarde")
+            self.fig.canvas.draw_idle()
+            pt_salvo   = self.btns["_tp"].text.strip()
+            orig_salvo = self.btns["_to"].text.strip()
+
+            def _buscar():
+                frase_id = _gt_translate(frase_pt, "pt", src) or ""
+                prefill  = {"pt": pt_salvo, "orig": orig_salvo,
+                            "frase_pt": frase_pt, "frase": frase_id}
+                def _cb():
+                    self._fechar_add()
+                    m = "OK! Frase traduzida!" if frase_id else "Sem conexão."
+                    self.tela_add(msg=m, _prefill=prefill)
+                _UI_QUEUE.put(_cb)
+            threading.Thread(target=_buscar, daemon=True).start()
+
+        ax_trf = self.fig.add_axes([0.52, 0.635, 0.04, 0.052])
+        b_trf  = Button(ax_trf, "▶", color=AZUL, hovercolor=DEST)
+        b_trf.label.set_color("white"); b_trf.label.set_fontsize(13); b_trf.label.set_fontweight("bold")
+        b_trf.on_clicked(_traduzir_frase)
+        self.btns["_atrf"] = ax_trf
+        self.btns["_bt_trf"] = b_trf
+
+        # ── Nível ──────────────────────────────────────────────────────
+        self._nivel = "Básico"
+        figlabel(0.13, 0.505, "Nível:")
+        for nivel, cor, xb in [("Básico",VERD,0.28),("Médio",AMAR,0.44),("Avançado",VERM,0.60)]:
+            self.btn(nivel, [xb, 0.400, 0.12, 0.065],
+                     lambda e,n=nivel: setattr(self,"_nivel",n), cor=cor)
+
+        # ── Feedback ──────────────────────────────────────────────────
+        if msg:
+            self.txt(0.5, 0.51, msg, cor=VERD if "OK" in msg else VERM, fs=11, bold=True)
+
+        # ── Salvar / Cancelar ──────────────────────────────────────────
         def salvar(e):
-            orig = self.btns["_to"].text.strip()
-            pt   = self.btns["_tp"].text.strip()
-            frase= self.btns["_tf"].text.strip()
-            fp = self.btns["_tg"].text.strip()
+            orig  = self.btns["_to"].text.strip()   # palavra no idioma
+            pt    = self.btns["_tp"].text.strip()   # palavra em PT
+            frase = self.btns["_tf"].text.strip()   # frase no idioma
+            fp    = self.btns["_tg"].text.strip()   # frase em PT
             if not orig or not pt:
-                self._fechar_add(); self.tela_add(msg="Preencha palavra e traducao!")
+                self._fechar_add(); self.tela_add(msg="Preencha a palavra nos dois idiomas!")
                 return
             salvar_palavra(S["idioma"], orig, pt, self._nivel, frase, fp)
             som_acerto(); falar(orig, lang())
-            self._fechar_add(); self.tela_add(msg=f'OK! "{orig}" adicionada!')
+            self._fechar_add(); self.tela_add(msg=f'OK! "{orig}" ({pt}) adicionada!')
 
-        self.btn("Salvar",   [0.20, 0.11, 0.26, 0.09], salvar, cor="#6c3483")
-        self.btn("Cancelar", [0.54, 0.11, 0.26, 0.09], self._voltar_add, cor=BT)
+        self.btn("💾 Salvar",   [0.20, 0.285, 0.26, 0.070], salvar, cor="#6c3483")
+        self.btn("Cancelar", [0.54, 0.285, 0.26, 0.070], self._voltar_add, cor=BT)
         self.status(f"Adicionar — {d['nome']}")
         self.fig.canvas.draw_idle()
 
+
     def _fechar_add(self):
-        for k in ["_ao","_ap","_af","_ag"]:
-            if k in self.btns: self.btns.pop(k).remove()
-        for k in ["_to","_tp","_tf","_tg"]: self.btns.pop(k, None)
+        # Remove eixos dos TextBoxes e botões Traduzir registrados com chaves fixas
+        for k in ["_ao","_ap","_af","_ag","_atrp","_atrf"]:
+            if k in self.btns:
+                try: self.btns.pop(k).remove()
+                except: pass
+        for k in ["_to","_tp","_tf","_tg","_bt_trp","_bt_trf"]:
+            self.btns.pop(k, None)
+        # Remove todos os _btn_* (botões de nível, Salvar, Cancelar) que sobrarem
+        for k in list(self.btns.keys()):
+            if k.startswith("_btn_"):
+                try: self.btns.pop(k).ax.remove()
+                except: pass
+        # Remove fig.text dos labels
+        for txt in getattr(self, "_add_labels", []):
+            try: txt.remove()
+            except: pass
+        self._add_labels = []
 
     def _voltar_add(self, _=None):
         self._fechar_add(); self.tela_menu()
