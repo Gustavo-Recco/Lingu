@@ -26,6 +26,7 @@ pip install -r requirements.txt
 ```
 
 > `winsound` já vem com o Python no Windows, não precisa instalar.
+> 
 > `urllib` e `queue` também já fazem parte da biblioteca padrão do Python.
 
 ### 2. Executar
